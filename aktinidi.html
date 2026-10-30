@@ -217,6 +217,13 @@ function viewDiary(){
   </section>`+body;
 }
 
+function treesText(f){
+  const has=n=>n!==null&&n!==undefined&&n!=='';
+  if(!has(f.totalTrees))return has(f.femaleTrees)?`${nf(f.femaleTrees,0)} θηλυκά δέντρα`:'';
+  if(!has(f.femaleTrees))return `${nf(f.totalTrees,0)} δέντρα`;
+  return `${nf(f.totalTrees,0)} δέντρα: ${nf(f.femaleTrees,0)} θηλυκά, ${nf(f.totalTrees-f.femaleTrees,0)} αρσενικά`;
+}
+
 function viewFields(){
   if(!S.fields.length)return `<div class="empty"><h2>Κανένα χωράφι ακόμη</h2><p>Πρόσθεσε το πρώτο σου χωράφι με όνομα, στρέμματα και ποικιλία.</p><button class="btn primary" data-act="newField">Πρόσθεσε χωράφι</button></div>`;
   const all=fertEntries().filter(inYear);
@@ -224,7 +231,7 @@ function viewFields(){
     const l=all.filter(e=>e.fieldId===f.id),t=totals(l),a=num(f.area);
     const last=[...l].sort((x,y)=>(y.date||'').localeCompare(x.date||''))[0];
     return `<article class="card">
-      <div class="cardhead"><div><h2>${esc(f.name)}</h2><div class="lbl">${nf(a)} στρέμματα${f.variety?' · '+esc(f.variety):''}${f.plantedYear?' · φύτευση '+esc(f.plantedYear):''}</div></div>
+      <div class="cardhead"><div><h2>${esc(f.name)}</h2><div class="lbl">${nf(a)} στρέμματα${f.variety?' · '+esc(f.variety):''}${f.plantedYear?' · φύτευση '+esc(f.plantedYear):''}${treesText(f)?'<br>'+esc(treesText(f)):''}</div></div>
       <button class="link" data-act="editField" data-id="${esc(f.id)}">Αλλαγή</button></div>
       ${a>0?npkHtml(t,a,'κιλά/στρ.'):'<div class="lbl">Βάλε στρέμματα για να δεις μονάδες ανά στρέμμα.</div>'}
       <div class="meta">${S.year}: ${l.length} λιπάνσεις, ${eur(t.cost)}${last?`, τελευταία ${fdate(last.date)}`:''}</div>
@@ -265,7 +272,9 @@ function fieldForm(f={}){openDlg(`<form id="fieldForm" data-id="${esc(f.id||'')}
   <label class="f"><span>Όνομα</span><input id="fName" name="name" value="${esc(f.name)}" placeholder="π.χ. Κάτω χωράφι" required></label>
   <div class="two"><label class="f"><span>Στρέμματα</span><input id="fArea" name="area" type="number" inputmode="decimal" step="any" min="0" value="${esc(f.area)}" required></label>
   <label class="f"><span>Ποικιλία</span><input id="fVar" name="variety" list="vars" value="${esc(f.variety)}" placeholder="π.χ. Hayward"><datalist id="vars">${VARIETIES.map(v=>`<option value="${esc(v)}">`).join('')}</datalist></label>
-  <label class="f"><span>Έτος φύτευσης</span><input id="fYear" name="plantedYear" type="number" inputmode="numeric" value="${esc(f.plantedYear)}"></label></div>
+  <label class="f"><span>Έτος φύτευσης</span><input id="fYear" name="plantedYear" type="number" inputmode="numeric" value="${esc(f.plantedYear)}"></label>
+  <label class="f"><span>Σύνολο δέντρων</span><input id="fTrees" name="totalTrees" type="number" inputmode="numeric" step="1" min="0" value="${esc(f.totalTrees)}"></label>
+  <label class="f"><span>Θηλυκά δέντρα</span><input id="fFemale" name="femaleTrees" type="number" inputmode="numeric" step="1" min="0" value="${esc(f.femaleTrees)}"></label></div>
   <label class="f"><span>Σημείωση</span><textarea id="fNote" name="note" rows="2">${esc(f.note)}</textarea></label>
   ${actions(f.id)}</form>`)}
 
@@ -435,9 +444,12 @@ function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;clearTim
 async function saveField(form){
   const v=Object.fromEntries(new FormData(form));
   if(!v.name.trim()||num(v.area)<=0)return formError('Βάλε όνομα και στρέμματα.');
+  const trees=x=>x===''?null:Number(x),totalTrees=trees(v.totalTrees),femaleTrees=trees(v.femaleTrees);
+  if([totalTrees,femaleTrees].some(n=>n!==null&&(!Number.isInteger(n)||n<0)))return formError('Τα δέντρα μετριούνται σε ακέραιους αριθμούς.');
+  if(totalTrees!==null&&femaleTrees!==null&&femaleTrees>totalTrees)return formError('Τα θηλυκά δέντρα δεν μπορεί να είναι περισσότερα από το σύνολο.');
   const id=form.dataset.id,old=S.fields.find(f=>f.id===id)||{};
   const {id:_x,...rest}=old;
-  await (id?db.doc('fields/'+id):db.collection('fields').doc()).set({...rest,name:v.name.trim(),area:num(v.area),variety:v.variety.trim(),plantedYear:v.plantedYear,note:v.note.trim()});
+  await (id?db.doc('fields/'+id):db.collection('fields').doc()).set({...rest,name:v.name.trim(),area:num(v.area),variety:v.variety.trim(),plantedYear:v.plantedYear,totalTrees,femaleTrees,note:v.note.trim()});
   dlg.close();toast('Το χωράφι αποθηκεύτηκε.');
 }
 async function saveEntry(form,next){

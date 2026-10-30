@@ -5,7 +5,7 @@
 ## Στήσιμο του Supabase
 
 1. Άνοιξε λογαριασμό στο [supabase.com](https://supabase.com) και φτιάξε νέο έργο, σε περιοχή της ΕΕ (π.χ. Frankfurt).
-2. Στο **SQL Editor**, επικόλλησε όλο το [supabase/schema.sql](supabase/schema.sql) και πάτα **Run**. Το τρέχεις μία φορά.
+2. Στο **SQL Editor**, επικόλλησε όλο το [supabase/schema.sql](supabase/schema.sql) και πάτα **Run**. Μετά κάνε το ίδιο με το [supabase/002_trees.sql](supabase/002_trees.sql). Το καθένα τρέχει μία φορά.
 3. Στο **Project Settings → API** αντίγραψε τη διεύθυνση του έργου και το **publishable** (ή **anon**) κλειδί στο [config.js](config.js) και τρέξε `python3 build.py`. Ποτέ το secret ή service_role κλειδί: το `build.py` το απορρίπτει.
 4. Στο **Edge Functions → Deploy a new function → Via Editor**, δώσε το όνομα `read-invoice` και πρόσθεσε τα δύο αρχεία από το [supabase/functions/read-invoice](supabase/functions/read-invoice): `index.ts` και `prompt.ts`. Άφησε ενεργό τον έλεγχο JWT.
 5. Στο **Edge Functions → Secrets**, πρόσθεσε το `ANTHROPIC_API_KEY` με δικό σου κλειδί, και βάλε μηνιαίο όριο δαπάνης στην κονσόλα της Anthropic.
