@@ -165,7 +165,9 @@ const costOf=e=>{const r=lineOf(e);return r?num(e.qty)*num(r.line.price):0};
 function totals(list){const t={kg:0,lt:0,n:0,p:0,k:0,cost:0,unparsed:0};for(const e of list){const q=num(e.qty);t.cost+=costOf(e);if(e.unit==='lt'){t.lt+=q;continue}t.kg+=q;const f=parseNPK(e.formula);if(f){t.n+=q*f.n/100;t.p+=q*f.p/100;t.k+=q*f.k/100}else t.unparsed++}return t}
 const invTotals=i=>{const net=(i.lines||[]).reduce((a,l)=>a+num(l.qty)*num(l.price),0);return{net,gross:net*(1+num(i.vat)/100)}};
 const inYear=e=>(e.date||'').slice(0,4)===S.year;
-const npkHtml=(t,div,unit)=>`<div class="npk"><span class="N"><b>${nf(t.n/div)}</b><small>N ${unit}</small></span><span class="P"><b>${nf(t.p/div)}</b><small>P₂O₅ ${unit}</small></span><span class="K"><b>${nf(t.k/div)}</b><small>K₂O ${unit}</small></span></div>`;
+const npkHtml=(t,div,unit,d=1)=>`<div class="npk"><span class="N"><b>${nf(t.n/div,d)}</b><small>N ${unit}</small></span><span class="P"><b>${nf(t.p/div,d)}</b><small>P₂O₅ ${unit}</small></span><span class="K"><b>${nf(t.k/div,d)}</b><small>K₂O ${unit}</small></span></div>`;
+// Doses are shown per tree, using all trees of the field. A field without a tree count falls back to per stremma.
+const doseBase=f=>{if(!f)return null;const trees=num(f.totalTrees),area=num(f.area);return trees>0?{div:trees,per:'δέντρο',d:2}:area>0?{div:area,per:'στρ.',d:1}:null};
 
 function yearOptions(){const ys=new Set([String(new Date().getFullYear()),S.year]);S.entries.forEach(e=>e.date&&ys.add(e.date.slice(0,4)));return [...ys].sort().reverse().map(y=>`<option value="${y}"${y===S.year?' selected':''}>${y}</option>`).join('')}
 
@@ -187,15 +189,15 @@ function viewDiary(){
   const list=fertEntries().filter(inYear).filter(e=>!S.field||e.fieldId===S.field).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const fo=fieldOf(S.field);
   const t=totals(list);
-  const area=fo?num(fo.area):0;
-  const npk=fo&&area>0?npkHtml(t,area,'κιλά/στρ.'):npkHtml(t,1,'κιλά');
+  const base=doseBase(fo);
+  const npk=base?npkHtml(t,base.div,'κιλά/'+base.per,base.d):npkHtml(t,1,'κιλά');
   const toolbar=`<div class="toolbar">
     <select id="fFilter" data-chg="field" aria-label="Χωράφι"><option value="">Όλα τα χωράφια</option>${S.fields.map(f=>`<option value="${esc(f.id)}"${f.id===S.field?' selected':''}>${esc(f.name)}</option>`).join('')}</select>
     <select id="yFilter" data-chg="year" aria-label="Έτος">${yearOptions()}</select>
     <span class="grow"></span>
     ${downloads&&list.length?`<button class="btn small" data-act="exportCsv">Εξαγωγή σε CSV</button>`:''}
   </div>`;
-  if(!S.fields.length)return `<div class="empty"><h2>Ξεκίνα από τα χωράφια σου</h2><p>Πρόσθεσε ένα χωράφι με τα στρέμματά του, για να υπολογίζονται οι λιπαντικές μονάδες ανά στρέμμα.</p><button class="btn primary" data-act="newField">Πρόσθεσε χωράφι</button></div>`;
+  if(!S.fields.length)return `<div class="empty"><h2>Ξεκίνα από τα χωράφια σου</h2><p>Πρόσθεσε ένα χωράφι με τα στρέμματα και τα δέντρα του, για να υπολογίζονται οι λιπαντικές μονάδες ανά δέντρο.</p><button class="btn primary" data-act="newField">Πρόσθεσε χωράφι</button></div>`;
   let body;
   if(!list.length)body=`<div class="empty"><p>Δεν υπάρχει λίπανση για ${esc(fo?fo.name:'τα χωράφια σου')} το ${esc(S.year)}.</p><button class="btn primary" data-act="newEntry">Καταχώρισε λίπανση</button></div>`;
   else{
@@ -203,11 +205,11 @@ function viewDiary(){
     for(const e of list){
       const m=dt(e.date).toLocaleDateString('el-GR',{month:'long',year:'numeric'});
       if(m!==cur){if(cur)out+='</div>';out+=`<h2 class="month">${esc(m.charAt(0).toUpperCase()+m.slice(1))}</h2><div class="list">`;cur=m}
-      const f=fieldOf(e.fieldId),a=f?num(f.area):0,r=lineOf(e),c=costOf(e);
+      const f=fieldOf(e.fieldId),b=doseBase(f),r=lineOf(e),c=costOf(e);
       out+=`<article class="row">
         <div class="day">${dt(e.date).getDate()}<small>${esc(dt(e.date).toLocaleDateString('el-GR',{weekday:'short'}))}</small></div>
         <div><div class="title">${esc(e.product)}</div><div class="meta">${esc(f?f.name:'Χωράφι που διαγράφηκε')}</div></div>
-        <div class="qty">${nf(num(e.qty))} ${esc(e.unit)}${a>0?`<small>${nf(num(e.qty)/a)} ${esc(e.unit)}/στρ.</small>`:''}</div>
+        <div class="qty">${nf(num(e.qty))} ${esc(e.unit)}${b?`<small>${nf(num(e.qty)/b.div,b.d)} ${esc(e.unit)}/${b.per}</small>`:''}</div>
         <div class="foot">
           ${e.formula?`<span class="chip formula">${esc(e.formula)}</span>`:''}
           ${e.stage?`<span class="chip">${esc(e.stage)}</span>`:''}
@@ -240,12 +242,13 @@ function viewFields(){
   if(!S.fields.length)return `<div class="empty"><h2>Κανένα χωράφι ακόμη</h2><p>Πρόσθεσε το πρώτο σου χωράφι με όνομα, στρέμματα και ποικιλία.</p><button class="btn primary" data-act="newField">Πρόσθεσε χωράφι</button></div>`;
   const all=fertEntries().filter(inYear);
   const cards=[...S.fields].sort((a,b)=>(a.name||'').localeCompare(b.name||'','el')).map(f=>{
-    const l=all.filter(e=>e.fieldId===f.id),t=totals(l),a=num(f.area);
+    const l=all.filter(e=>e.fieldId===f.id),t=totals(l),a=num(f.area),b=doseBase(f);
     const last=[...l].sort((x,y)=>(y.date||'').localeCompare(x.date||''))[0];
     return `<article class="card">
       <div class="cardhead"><div><h2>${esc(f.name)}</h2><div class="lbl">${nf(a)} στρέμματα${f.variety?' · '+esc(f.variety):''}${f.plantedYear?' · φύτευση '+esc(f.plantedYear):''}${treesText(f)?'<br>'+esc(treesText(f)):''}</div></div>
       <button class="link" data-act="editField" data-id="${esc(f.id)}">Αλλαγή</button></div>
-      ${a>0?npkHtml(t,a,'κιλά/στρ.'):'<div class="lbl">Βάλε στρέμματα για να δεις μονάδες ανά στρέμμα.</div>'}
+      ${b?npkHtml(t,b.div,'κιλά/'+b.per,b.d):''}
+      ${b&&b.per==='δέντρο'?'':'<div class="lbl">Βάλε αριθμό δέντρων για να δεις τις μονάδες ανά δέντρο.</div>'}
       <div class="meta">${S.year}: ${l.length} λιπάνσεις, ${eur(t.cost)}${last?`, τελευταία ${fdate(last.date)}`:''}</div>
       ${f.note?`<div class="lbl">${esc(f.note)}</div>`:''}
       <div><button class="btn small" data-act="showField" data-id="${esc(f.id)}">Δες τις λιπάνσεις</button></div>
@@ -317,11 +320,11 @@ function syncEntry(){
   const [iid,lid]=(form.line.value||'|').split('|');
   const inv=S.invoices.find(i=>i.id===iid),l=inv&&(inv.lines||[]).find(x=>x.id===lid);
   form.unit.disabled=!!l;
-  const f=S.fields.find(x=>x.id===form.fieldId.value),q=num(form.qty.value),a=f?num(f.area):0,parts=[];
+  const f=S.fields.find(x=>x.id===form.fieldId.value),q=num(form.qty.value),b=doseBase(f),parts=[];
   let warn=false;
-  if(q>0&&a>0)parts.push(`${nf(q/a)} ${esc(form.unit.value)}/στρ.`);
+  if(q>0&&b)parts.push(`${nf(q/b.div,b.d)} ${esc(form.unit.value)}/${b.per}`);
   const p=parseNPK(form.formula.value);
-  if(q>0&&a>0&&p&&form.unit.value==='kg')parts.push(`N ${nf(q*p.n/100/a)}, P₂O₅ ${nf(q*p.p/100/a)}, K₂O ${nf(q*p.k/100/a)} κιλά/στρ.`);
+  if(q>0&&b&&p&&form.unit.value==='kg')parts.push(`N ${nf(q*p.n/100/b.div,b.d)}, P₂O₅ ${nf(q*p.p/100/b.div,b.d)}, K₂O ${nf(q*p.k/100/b.div,b.d)} κιλά/${b.per}`);
   if(l){
     if(q>0)parts.push(`κόστος ${eur(q*num(l.price))}`);
     const editing=S.entries.find(x=>x.id===form.dataset.id);
@@ -524,8 +527,8 @@ async function clearExamples(btn){
 async function exportCsv(){
   const list=fertEntries().filter(inYear).filter(e=>!S.field||e.fieldId===S.field).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"',dec=n=>String(Math.round(n*100)/100).replace('.',',');
-  const rows=[['Ημερομηνία','Χωράφι','Στρέμματα','Λίπασμα','Τύπος N-P-K','Ποσότητα','Μονάδα','Ανά στρέμμα','Στάδιο','Τρόπος','Τιμολόγιο','Κόστος χωρίς ΦΠΑ','Σημείωση']];
-  for(const e of list){const f=fieldOf(e.fieldId),a=f?num(f.area):0,r=lineOf(e);rows.push([fdate(e.date),f?f.name:'',f?dec(a):'',e.product,e.formula,dec(num(e.qty)),e.unit,a?dec(num(e.qty)/a):'',e.stage,e.method,r?r.inv.number:'',r?dec(costOf(e)):'',e.note])}
+  const rows=[['Ημερομηνία','Χωράφι','Στρέμματα','Λίπασμα','Τύπος N-P-K','Ποσότητα','Μονάδα','Δέντρα','Ανά δέντρο','Ανά στρέμμα','Στάδιο','Τρόπος','Τιμολόγιο','Κόστος χωρίς ΦΠΑ','Σημείωση']];
+  for(const e of list){const f=fieldOf(e.fieldId),a=f?num(f.area):0,tr=f?num(f.totalTrees):0,r=lineOf(e);rows.push([fdate(e.date),f?f.name:'',f?dec(a):'',e.product,e.formula,dec(num(e.qty)),e.unit,tr||'',tr?dec(num(e.qty)/tr):'',a?dec(num(e.qty)/a):'',e.stage,e.method,r?r.inv.number:'',r?dec(costOf(e)):'',e.note])}
   try{await downloads.save({filename:`lipanseis-${S.year}.csv`,data:'﻿'+rows.map(r=>r.map(q).join(';')).join('\r\n')});toast('Το αρχείο αποθηκεύτηκε.')}
   catch(e){if(e&&e.code!=='declined')toast('Η εξαγωγή δεν έγινε. Ξαναδοκίμασε σε λίγο.')}
 }
