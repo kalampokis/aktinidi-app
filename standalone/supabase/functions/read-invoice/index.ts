@@ -32,6 +32,18 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return fail("invalid_request");
 
+  // Checked here as well as at the gateway: the publishable key is public, and each call spends money.
+  const authorization = req.headers.get("Authorization") ?? "";
+  const who = await fetch(`${Deno.env.get("SUPABASE_URL")}/auth/v1/user`, {
+    headers: { Authorization: authorization, apikey: req.headers.get("apikey") ?? "" },
+  }).catch(() => null);
+  if (!who?.ok) {
+    return new Response(JSON.stringify({ ok: false, error: "session_expired" }), {
+      status: 401,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
   let files: { type: string; data: string }[];
   try {
     files = (await req.json()).files;
