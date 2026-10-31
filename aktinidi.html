@@ -163,15 +163,58 @@ const fertEntries=()=>S.entries.filter(e=>e.type==='fertilizer');
 const fieldOf=id=>S.fields.find(f=>f.id===id);
 const lineOf=e=>{const i=S.invoices.find(x=>x.id===e.invoiceId);const l=i&&(i.lines||[]).find(x=>x.id===e.lineId);return l?{inv:i,line:l}:null};
 const allProducts=()=>[...S.invoices.flatMap(i=>i.lines||[]),...fertEntries()].filter(x=>x.product);
-// The catalogue holds one card per product, matched by name regardless of case and accents.
-// The id comes from the name, so two devices offline create the same card rather than two.
-const prodKey=n=>String(n||'').normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('el').replace(/ς/g,'σ').replace(/\s+/g,' ').trim();
-const productOf=n=>{const k=prodKey(n);return S.products.find(p=>prodKey(p.name)===k)};
+// The catalogue holds one card per product. Invoices print the same product as "GEOXE 50WG 200GR" and
+// "GEOXE 50WG 500GR", or with its N-P-K in the name, so a match ignores the pack size, case and accents.
+// The N-P-K stays part of the match: "X 20-10-10" and "X 15-15-15" are different products.
+const normName=n=>String(n||'').normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('el').replace(/ς/g,'σ').replace(/\s+/g,' ').trim();
+const NPK_TOKEN=/(^|[\s(,])\d+(?:[.,]\d+)?\s*[-–—]\s*\d+(?:[.,]\d+)?\s*[-–—]\s*\d+(?:[.,]\d+)?(?=$|[\s),.;+])/gu;
+const PACK_TOKEN=/(^|[\s(,])(?:\d+\s*[xχ*×]\s*)?\d+(?:[.,]\d+)?\s*(?:[kκ][gγ]r?|κιλ\p{L}*|gr?|γρ?|lt?r?|lit\p{L}*|λτ?|λ[ιί]τ\p{L}*|ml|cc)(?=$|[\s),.;])/giu;
+const withoutPack=n=>String(n||'').replace(PACK_TOKEN,'$1').replace(/\(\s*\)/g,' ').replace(/\s+/g,' ').trim();
+const displayName=n=>{const a=withoutPack(n)||String(n||'').trim();return a.replace(NPK_TOKEN,'$1').replace(/\(\s*\)/g,' ').replace(/\s+/g,' ').replace(/^[\s,+-]+|[\s,+-]+$/g,'')||a};
+const npkKey=t=>{const f=parseNPK(t);return f?`${f.n}-${f.p}-${f.k}`:''};
+let catalogue=null;
+function catalogueIndex(){
+  if(catalogue)return catalogue;
+  const own=new Map(),npks=new Map(),seen=[...allProducts(),...S.products.map(p=>({product:p.name,formula:p.formula}))];
+  for(const x of seen){
+    const inName=npkKey(x.product),f=inName||npkKey(x.formula),base=normName(displayName(x.product));
+    if(!f)continue;
+    if(!inName&&!own.has(normName(x.product)))own.set(normName(x.product),f);
+    if(!npks.has(base))npks.set(base,new Set());
+    npks.get(base).add(f);
+  }
+  return catalogue={own,npks,cards:null};
+}
+const prodKey=n=>{
+  const base=normName(displayName(n)),inName=npkKey(n);
+  if(inName)return base+'|'+inName;
+  const ix=catalogueIndex(),f=ix.own.get(normName(n));
+  if(f)return base+'|'+f;
+  const all=ix.npks.get(base);
+  return all&&all.size===1?base+'|'+[...all][0]:base;
+};
+// Older devices may hold several cards of one product. They read as one, keeping every value any of them has.
+function catalogueCards(){
+  const ix=catalogueIndex();
+  if(ix.cards)return ix.cards;
+  const groups=new Map();
+  for(const p of S.products){const k=prodKey(p.name);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(p)}
+  ix.cards=new Map();
+  const filled=p=>Object.values(p).filter(v=>v!==null&&v!==undefined&&v!=='').length;
+  for(const [k,list] of groups){
+    const sorted=[...list].sort((a,b)=>filled(b)-filled(a)||a.id.localeCompare(b.id)),card={...sorted[0]};
+    for(const o of sorted.slice(1))for(const [f,v] of Object.entries(o))if((card[f]===null||card[f]===undefined||card[f]==='')&&v!==null&&v!=='')card[f]=v;
+    ix.cards.set(k,card);
+  }
+  return ix.cards;
+}
+const productOf=n=>catalogueCards().get(prodKey(n));
+const otherCards=card=>S.products.filter(p=>p.id!==card.id&&prodKey(p.name)===prodKey(card.name));
 const productId=n=>{let a=0xdeadbeef,b=0x41c6ce57;for(const c of prodKey(n)){const x=c.codePointAt(0);a=Math.imul(a^x,2654435761);b=Math.imul(b^x,1597334677)}a=Math.imul(a^a>>>16,2246822507)^Math.imul(b^b>>>13,3266489909);b=Math.imul(b^b>>>16,2246822507)^Math.imul(a^a>>>13,3266489909);return 'p'+(b>>>0).toString(36)+(a>>>0).toString(36)};
 const catOf=n=>{const p=productOf(n);return p&&p.category||''};
 const isNutrition=n=>!NOT_NUTRITION.includes(catOf(n));
 // An N-P-K stated once is reused for every later entry of the same product.
-const knownFormula=n=>{const c=productOf(n);if(c&&c.formula)return c.formula;const k=prodKey(n),m=allProducts().find(x=>x.formula&&prodKey(x.product)===k);return m?m.formula:''};
+const knownFormula=n=>{const c=productOf(n);if(c&&c.formula)return c.formula;const k=prodKey(n),m=allProducts().find(x=>x.formula&&prodKey(x.product)===k);return m?m.formula:npkKey(n)?String(n).match(/\d+(?:[.,]\d+)?\s*[-–—]\s*\d+(?:[.,]\d+)?\s*[-–—]\s*\d+(?:[.,]\d+)?/)[0]:''};
 // Older entries recorded a method, and two of its values say the kind of fertilization too.
 const kindOf=e=>e.kind||{'Υδρολίπανση':'Υδρολίπανση','Διαφυλλικά':'Διαφυλλική'}[e.method]||'';
 // A starting value for a new entry: organic and liquid-feed products repeat their kind, the rest follow the season.
@@ -331,15 +374,15 @@ function viewInvoices(){
 }
 
 function viewProducts(){
-  const cards=new Map(S.products.map(p=>[prodKey(p.name),p]));
+  const cards=new Map(catalogueCards());
   for(const x of allProducts()){const k=prodKey(x.product);if(!cards.has(k))cards.set(k,{name:x.product,formula:knownFormula(x.product)})}
   if(!cards.size)return `<div class="empty"><h2>Κανένα προϊόν ακόμη</h2><p>Τα προϊόντα των τιμολογίων και των λιπάνσεών σου εμφανίζονται εδώ. Συμπληρώνεις μία φορά τα στοιχεία τους και χρησιμοποιούνται παντού.</p><button class="btn primary" data-act="newProduct">Πρόσθεσε προϊόν</button></div>`;
   const lacks=p=>!p.category?2:!NOT_NUTRITION.includes(p.category)&&!parseNPK(p.formula)?1:0;
-  const list=[...cards.values()].sort((a,b)=>lacks(b)-lacks(a)||a.name.localeCompare(b.name,'el'));
+  const list=[...cards.values()].sort((a,b)=>lacks(b)-lacks(a)||displayName(a.name).localeCompare(displayName(b.name),'el'));
   return `<div class="list">`+list.map(p=>{
     const k=prodKey(p.name),es=fertEntries().filter(e=>prodKey(e.product)===k),extra=[p.cao&&`CaO ${nf(num(p.cao),2)}%`,p.mgo&&`MgO ${nf(num(p.mgo),2)}%`,p.boron&&`B ${nf(num(p.boron),2)}%`,p.manufacturer,p.approval&&`Αρ. έγκρισης ${p.approval}`].filter(Boolean);
     const nut=!NOT_NUTRITION.includes(p.category);
-    return `<article class="card"><div class="cardhead"><div><h2>${esc(p.name)}</h2><div class="foot" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${p.category?`<span class="chip">${esc(p.category)}</span>`:''}${p.formula?`<span class="chip formula">${esc(p.formula)}</span>`:''}</div></div>
+    return `<article class="card"><div class="cardhead"><div><h2>${esc(displayName(p.name))}</h2><div class="foot" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${p.category?`<span class="chip">${esc(p.category)}</span>`:''}${p.formula?`<span class="chip formula">${esc(p.formula)}</span>`:''}</div></div>
       <button class="link" data-act="editProduct" data-name="${esc(p.name)}">${lacks(p)?'Συμπλήρωσε':'Αλλαγή'}</button></div>
       ${extra.length?`<div class="meta">${esc(extra.join(' · '))}</div>`:''}
       ${!p.category?`<div class="lbl">Χωρίς κατηγορία. Μετρά προς το παρόν ως λίπασμα.</div>`:nut&&!parseNPK(p.formula)?`<div class="lbl">Λείπει ο τύπος N-P-K, οπότε δεν μετρά στις μονάδες.</div>`:''}
@@ -532,7 +575,7 @@ $('#photoIn').addEventListener('change',ev=>{const f=ev.target.files[0];ev.targe
 function productForm(p={}){
   const isNew=!p.name;
   openDlg(`<form id="productForm" data-id="${esc(p.id||'')}" data-name="${esc(p.name||'')}" novalidate>
-  <h2>${isNew?'Νέο προϊόν':esc(p.name)}</h2>
+  <h2>${isNew?'Νέο προϊόν':esc(displayName(p.name))}</h2>
   ${isNew?`<label class="f"><span>Όνομα</span><input id="pName" name="name" required></label>`:''}
   <label class="f"><span>Κατηγορία</span><select id="pCat" name="category">${opt(CATEGORIES,p.category,'Διάλεξε')}</select></label>
   <div id="pNut" class="two"><label class="f"><span>Τύπος N-P-K</span><input id="pForm" name="formula" value="${esc(p.formula||(p.name?knownFormula(p.name):''))}" placeholder="π.χ. 20-10-10"></label>
@@ -567,6 +610,7 @@ async function saveProduct(form){
   if([cao,mgo,boron].some(n=>n!==null&&(n<0||n>100)))return formError('Τα ποσοστά είναι από 0 έως 100.');
   const old=productOf(name)||{},{id:_x,...rest}=old,nut=!NOT_NUTRITION.includes(v.category);
   await db.doc('products/'+(old.id||productId(name))).set({...rest,name:old.name||name,category:v.category,formula:nut?v.formula.trim():'',cao:nut?cao:null,mgo:nut?mgo:null,boron:nut?boron:null,manufacturer:v.manufacturer.trim(),approval:v.category==='Φυτοπροστατευτικό'?v.approval.trim():'',note:v.note.trim()});
+  if(old.id)for(const o of otherCards(old))await db.doc('products/'+o.id).delete();
   dlg.close();toast('Το προϊόν αποθηκεύτηκε.');
 }
 function formError(msg){const e=$('#formErr');if(e){e.textContent=msg;e.hidden=false;e.scrollIntoView({block:'nearest'})}}
@@ -619,7 +663,7 @@ async function doDelete(form){
   const id=form.dataset.id;
   if(form.id==='fieldForm'){await db.doc('fields/'+id).delete()}
   if(form.id==='entryForm'){await db.doc('entries/'+id).delete()}
-  if(form.id==='productForm'){await db.doc('products/'+id).delete()}
+  if(form.id==='productForm'){const c=S.products.find(p=>p.id===id);if(c)for(const o of otherCards(c))await db.doc('products/'+o.id).delete();await db.doc('products/'+id).delete()}
   if(form.id==='invForm'){
     for(const e of S.entries.filter(x=>x.invoiceId===id))await db.doc('entries/'+e.id).update({invoiceId:null,lineId:null});
     const inv=S.invoices.find(i=>i.id===id);
@@ -707,7 +751,7 @@ document.addEventListener('submit',async ev=>{
 /* Data */
 function listen(name){
   db.collection(name).onSnapshot(snap=>{
-    S[name]=snap.docs.map(d=>({id:d.id,...d.data()}));S.got.add(name);render();
+    S[name]=snap.docs.map(d=>({id:d.id,...d.data()}));catalogue=null;S.got.add(name);render();
   },()=>{S.failed=true;render()});
 }
 (async function(){
