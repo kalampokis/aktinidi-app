@@ -132,7 +132,7 @@ async function pull(){
   const {data,error}=await sb.rpc('pull_changes',{p_since:ls.get(CURSOR_ITEM)});
   if(error)throw error;
   const touched=new Set();
-  for(const col of ['fields','invoices','entries'])for(const row of data[col]||[]){
+  for(const col of ['fields','invoices','entries','products'])for(const row of data[col]||[]){
     const path=col+'/'+row.id;
     if(pending.has(path))continue;
     await tx('docs','readwrite',s=>row.deleted?s.delete(path):s.put({path,col,id:row.id,data:row.data}));
