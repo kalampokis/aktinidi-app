@@ -217,13 +217,15 @@ const inYear=e=>!!e.date&&seasonOf(e)===S.year;
 const npkHtml=(t,div,unit,d=1)=>`<div class="npk"><span class="N"><b>${nf(t.n/div,d)}</b><small>N ${unit}</small></span><span class="P"><b>${nf(t.p/div,d)}</b><small>P₂O₅ ${unit}</small></span><span class="K"><b>${nf(t.k/div,d)}</b><small>K₂O ${unit}</small></span></div>`;
 // Doses are shown per tree, using all trees of the field. A field without a tree count falls back to per stremma.
 const extrasHtml=(t,b)=>{if(!b||!(t.ca||t.mg||t.b))return '';const v=[t.ca&&`CaO ${nf(t.ca/b.div,b.d)}`,t.mg&&`MgO ${nf(t.mg/b.div,b.d)}`,t.b&&`B ${nf(t.b/b.div,3)}`].filter(Boolean);return `<div class="lbl" style="grid-column:1/-1">${v.join(' · ')} κιλά/${b.per}</div>`};
-const noteHtml=t=>{const n=[];if(t.lt||t.unparsed)n.push('Οι μονάδες δεν μετρούν τα υγρά λιπάσματα και όσα δεν έχουν τύπο όπως 20-10-10.');if(t.nocost)n.push(`Στο κόστος δεν μετρούν ${t.nocost===1?'1 λίπανση':t.nocost+' λιπάνσεις'} χωρίς τιμολόγιο.`);return n.length?`<div class="lbl" style="grid-column:1/-1">${n.join(' ')}</div>`:''};
+const noteHtml=t=>{const n=[];if(t.lt||t.unparsed)n.push('Οι μονάδες δεν μετρούν τα υγρά λιπάσματα και όσα δεν έχουν τύπο όπως 20-10-10.');if(t.nocost)n.push(`Στο κόστος δεν ${t.nocost===1?'μετρά':'μετρούν'} ${countText(t.nocost)} χωρίς τιμολόγιο.`);return n.length?`<div class="lbl" style="grid-column:1/-1">${n.join(' ')}</div>`:''};
 // Units per tree split by kind of fertilization; pointless until at least one entry has a kind.
 function kindTable(list,b){
   const rows=[...KINDS,''].map(k=>[k,totals(list.filter(e=>kindOf(e)===k))]).filter(([,t])=>t.count);
   if(!b||!rows.some(([k])=>k))return '';
-  return `<table class="kinds"><tr><th>Κιλά/${b.per}</th><th>N</th><th>P₂O₅</th><th>K₂O</th></tr>${rows.map(([k,t])=>`<tr><td>${esc(k||'Χωρίς είδος')}</td><td>${nf(t.n/b.div,b.d)}</td><td>${nf(t.p/b.div,b.d)}</td><td>${nf(t.k/b.div,b.d)}</td></tr>`).join('')}</table>`;
+  const partial=rows.some(([,t])=>(t.lt||t.unparsed)&&(t.n||t.p||t.k));
+  return `<table class="kinds"><tr><th>Κιλά/${b.per}</th><th>N</th><th>P₂O₅</th><th>K₂O</th></tr>${rows.map(([k,t])=>`<tr><td>${esc(k||'Χωρίς είδος')}</td>${t.lt||t.unparsed?(t.n||t.p||t.k?`<td>${nf(t.n/b.div,b.d)}*</td><td>${nf(t.p/b.div,b.d)}*</td><td>${nf(t.k/b.div,b.d)}*</td>`:`<td colspan="3">δεν υπολογίζεται</td>`):`<td>${nf(t.n/b.div,b.d)}</td><td>${nf(t.p/b.div,b.d)}</td><td>${nf(t.k/b.div,b.d)}</td>`}</tr>`).join('')}</table>${partial?'<div class="lbl">* Χωρίς όσα από αυτό το είδος είναι υγρά ή δεν έχουν τύπο.</div>':''}`;
 }
+const countText=n=>n===1?'1 λίπανση':n+' λιπάνσεις';
 const doseBase=f=>{if(!f)return null;const trees=num(f.totalTrees),area=num(f.area);return trees>0?{div:trees,per:'δέντρο',d:2}:area>0?{div:area,per:'στρ.',d:1}:null};
 
 function yearOptions(){const ys=new Set([seasonOf({date:new Date().toLocaleDateString('sv')}),S.year]);S.entries.forEach(e=>e.date&&ys.add(seasonOf(e)));return [...ys].sort().reverse().map(y=>`<option value="${y}"${y===S.year?' selected':''}>Σοδειά ${y}</option>`).join('')}
@@ -281,9 +283,9 @@ function viewDiary(){
     body=out+'</div>';
   }
   return toolbar+`<section class="summary" aria-label="Σύνοψη σοδειάς ${esc(S.year)}">
-    <div class="stat"><b>${t.count}</b><span class="lbl">λιπάνσεις, σοδειά ${esc(S.year)}</span></div>
+    <div class="stat"><b>${t.count}</b><span class="lbl">${t.count===1?'λίπανση':'λιπάνσεις'}, σοδειά ${esc(S.year)}</span></div>
     <div class="stat"><b>${nf(t.kg,0)} kg${t.lt?` + ${nf(t.lt,0)} lt`:''}</b><span class="lbl">λίπασμα</span></div>
-    <div class="stat"><b>${eur(t.cost)}</b><span class="lbl">κόστος χωρίς ΦΠΑ${base?` · ${eur(t.cost/base.div)}/${base.per}`:''}</span></div>
+    <div class="stat"><b>${eur(t.cost)}</b><span class="lbl">κόστος χωρίς ΦΠΑ${base&&t.cost?` · ${eur(t.cost/base.div)}/${base.per}`:''}</span></div>
     ${npk}
     ${extrasHtml(t,base)}
     ${base?`<div style="grid-column:1/-1">${kindTable(list,base)}</div>`:''}
@@ -311,7 +313,7 @@ function viewFields(){
       ${extrasHtml(t,b)}
       ${kindTable(l,b)}
       ${b&&b.per==='δέντρο'?'':'<div class="lbl">Βάλε αριθμό δέντρων για να δεις τις μονάδες ανά δέντρο.</div>'}
-      <div class="meta">Σοδειά ${S.year}: ${t.count} λιπάνσεις, ${eur(t.cost)}${b&&t.cost?` (${eur(t.cost/b.div)}/${b.per})`:''}${last?`, τελευταία ${fdate(last.date)}`:''}</div>
+      <div class="meta">Σοδειά ${S.year}: ${countText(t.count)}, ${eur(t.cost)}${b&&t.cost?` (${eur(t.cost/b.div)}/${b.per})`:''}${last?`, τελευταία ${fdate(last.date)}`:''}</div>
       ${noteHtml(t)}
       ${f.note?`<div class="lbl">${esc(f.note)}</div>`:''}
       <div><button class="btn small" data-act="showField" data-id="${esc(f.id)}">Δες τις λιπάνσεις</button></div>
@@ -331,7 +333,7 @@ function viewInvoices(){
       <div class="meter${left<0?' over':''}"><i style="width:${pct}%"></i></div>
       <div class="top"><span class="lbl">Αγορά ${nf(q)} ${esc(l.unit)} · έπεσαν ${nf(used)} ${esc(l.unit)}</span>
       <span class="${left<0?'over-t':'lbl'}">${left<0?`Πέρασες ${nf(-left)} ${esc(l.unit)} παραπάνω`:`Απομένουν ${nf(left)} ${esc(l.unit)}`}</span></div>
-      ${left>0?`<div><button class="link" data-act="newEntryFrom" data-id="${esc(i.id)}" data-line="${esc(l.id)}">Καταχώρισε λίπανση από αυτό</button></div>`:''}</div>`}).join('');
+      ${left>0&&isNutrition(l.product)?`<div><button class="link" data-act="newEntryFrom" data-id="${esc(i.id)}" data-line="${esc(l.id)}">Καταχώρισε λίπανση από αυτό</button></div>`:''}</div>`}).join('');
     return `<article class="card" id="inv-${esc(i.id)}">
       <div class="cardhead"><div><h2>Τιμολόγιο ${esc(i.number)}</h2><div class="lbl">${fdate(i.date)}${i.supplier?' · '+esc(i.supplier):''}</div></div>
       <div style="text-align:right"><b>${eur(t.gross)}</b><div class="lbl">${eur(t.net)} + ΦΠΑ ${nf(num(i.vat))}%</div></div></div>
