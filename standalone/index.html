@@ -273,6 +273,17 @@ const doseBase=f=>{if(!f)return null;const trees=num(f.totalTrees),area=num(f.ar
 
 function yearOptions(){const ys=new Set([seasonOf({date:new Date().toLocaleDateString('sv')}),S.year]);S.entries.forEach(e=>e.date&&ys.add(seasonOf(e)));return [...ys].sort().reverse().map(y=>`<option value="${y}"${y===S.year?' selected':''}>Σοδειά ${y}</option>`).join('')}
 
+// The year turns over on a fixed date, so the screen can suddenly look empty: always point to the last year with records.
+function seasonLink(list){
+  const now=seasonOf({date:new Date().toLocaleDateString('sv')});
+  const older=list.filter(e=>e.date&&seasonOf(e)<S.year).map(seasonOf).sort().pop();
+  const go=(y,text)=>`<button class="link" data-act="showYear" data-id="${esc(y)}">${text}</button>`;
+  const links=[];
+  if(older)links.push(go(older,`Δες τη σοδειά ${esc(older)} (${countText(list.filter(e=>e.date&&seasonOf(e)===older).length)})`));
+  if(S.year<now)links.push(go(now,`Πίσω στην τρέχουσα σοδειά ${esc(now)}`));
+  return links.length?`<div class="toolbar">${links.join('')}</div>`:'';
+}
+
 function render(){
   document.querySelectorAll('#tabs button').forEach(b=>{b.dataset.v===S.tab?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});
   const fab=$('#fab');
@@ -325,7 +336,7 @@ function viewDiary(){
     }
     body=out+'</div>';
   }
-  return toolbar+`<section class="summary" aria-label="Σύνοψη σοδειάς ${esc(S.year)}">
+  return toolbar+seasonLink(fertEntries().filter(e=>!S.field||e.fieldId===S.field))+`<section class="summary" aria-label="Σύνοψη σοδειάς ${esc(S.year)}">
     <div class="stat"><b>${t.count}</b><span class="lbl">${t.count===1?'λίπανση':'λιπάνσεις'}, σοδειά ${esc(S.year)}</span></div>
     <div class="stat"><b>${nf(t.kg,0)} kg${t.lt?` + ${nf(t.lt,0)} lt`:''}</b><span class="lbl">λίπασμα</span></div>
     <div class="stat"><b>${eur(t.cost)}</b><span class="lbl">κόστος χωρίς ΦΠΑ${base&&t.cost?` · ${eur(t.cost/base.div)}/${base.per}`:''}</span></div>
@@ -361,7 +372,7 @@ function viewFields(){
       ${f.note?`<div class="lbl">${esc(f.note)}</div>`:''}
       <div><button class="btn small" data-act="showField" data-id="${esc(f.id)}">Δες τις λιπάνσεις</button></div>
     </article>`}).join('');
-  return `<div class="toolbar"><select id="yFilter2" data-chg="year" aria-label="Σοδειά">${yearOptions()}</select></div><div class="list">${cards}</div>`;
+  return `<div class="toolbar"><select id="yFilter2" data-chg="year" aria-label="Σοδειά">${yearOptions()}</select></div>${seasonLink(fertEntries())}<div class="list">${cards}</div>`;
 }
 
 function viewInvoices(){
@@ -723,6 +734,7 @@ document.addEventListener('click',ev=>{
     editProduct(){const n=b.dataset.name;productForm(productOf(n)||{name:n})},
     newField(){fieldForm()},
     editField(){fieldForm(S.fields.find(f=>f.id===id))},
+    showYear(){S.year=id;render();window.scrollTo(0,0)},
     showField(){S.field=id;S.tab='diary';render();window.scrollTo(0,0)},
     newInvoice(){invoiceForm()},
     scanInvoice(){$('#photoIn').click()},
